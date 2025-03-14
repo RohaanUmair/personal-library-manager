@@ -1,4 +1,13 @@
-books = []
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+# Initialize Firebase Admin SDK
+cred = credentials.Certificate("firebase-keys.json")
+firebase_admin.initialize_app(cred)
+
+# Firestore reference
+db = firestore.client()
+
 
 def add_book():
     title = input("Enter the book title: ")
@@ -14,57 +23,82 @@ def add_book():
         "genre": genre,
         "read": read_status
     }
-    books.append(book)
+
+    db.collection("books").add(book)
     print("Book added successfully!")
 
 
 def remove_book():
     title = input("Enter the title of the book to remove: ")
-    index = 0
-    while index < len(books):
-        if books[index]['title'].lower() == title.lower():
-            del books[index]
-            print("Book removed successfully!")
-            return
-        index += 1
-    print("Book not found.")
+    books_ref = db.collection("books")
+    docs = books_ref.where("title", "==", title).stream()
+
+    found = False
+    for doc in docs:
+        doc.reference.delete()
+        found = True
+
+    if found:
+        print("Book removed successfully!")
+    else:
+        print("Book not found.")
 
 
 def search_book():
     print("Search by:\n1. Title\n2. Author")
     choice = input("Enter your choice: ")
     keyword = input("Enter the keyword: ").lower()
-    found = False
 
-    for book in books:
-        if (choice == '1' and keyword in book['title'].lower()) or (choice == '2' and keyword in book['author'].lower()):
-            status = 'Read' if book['read'] else 'Unread'
-            print(book['title'], "by", book['author'], "(", book['year'], ") -", book['genre'], "-", status)
-            found = True
+    books_ref = db.collection("books")
+    if choice == '1':
+        docs = books_ref.where("title", ">=", keyword).stream()
+    elif choice == '2':
+        docs = books_ref.where("author", ">=", keyword).stream()
+    else:
+        print("Invalid choice.")
+        return
+
+    found = False
+    for doc in docs:
+        book = doc.to_dict()
+        status = 'Read' if book['read'] else 'Unread'
+        print(book['title'], "by", book['author'], "(", book['year'], ") -", book['genre'], "-", status)
+        found = True
 
     if not found:
         print("No matching book found.")
 
 
 def display_all_books():
-    if len(books) == 0:
+    docs = db.collection("books").stream()
+
+    found = False
+    for doc in docs:
+        book = doc.to_dict()
+        status = 'Read' if book['read'] else 'Unread'
+        print(book['title'], "by", book['author'], "(", book['year'], ") -", book['genre'], "-", status)
+        found = True
+
+    if not found:
         print("No books in the library.")
-    else:
-        for book in books:
-            status = 'Read' if book['read'] else 'Unread'
-            print(book['title'], "by", book['author'], "(", book['year'], ") -", book['genre'], "-", status)
+
 
 
 def display_statistics():
-    total_books = len(books)
+    docs = db.collection("books").stream()
+
+    total_books = 0
+    read_books = 0
+
+    for doc in docs:
+        book = doc.to_dict()
+        total_books += 1
+        if book['read']:
+            read_books += 1
+
     if total_books == 0:
         print("No books in the library.")
         return
-
-    read_books = 0
-    for book in books:
-        if book['read']:
-            read_books += 1
 
     percentage_read = (read_books / total_books) * 100
     print("Total books:", total_books)
