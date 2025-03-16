@@ -2,143 +2,100 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# Initialize Firebase Admin SDK with singleton pattern
-def initialize_firebase():
-    if not firebase_admin._apps:
-        cred = credentials.Certificate("firebase-keys.json")
-        firebase_admin.initialize_app(cred)
-    return firestore.client()
+# Initialize Firebase Admin SDK
+cred = credentials.Certificate("firebase-keys.json")
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred)
 
-@st.cache_resource
-def get_firestore_db():
-    return initialize_firebase()
+# Firestore reference
+db = firestore.client()
 
-db = get_firestore_db()
+# Function to add a book
+def add_book(title, author, year, genre, read_status):
+    book = {
+        "title": title,
+        "author": author,
+        "year": year,
+        "genre": genre,
+        "read": read_status
+    }
+    db.collection("books").add(book)
 
-# Rest of the code remains the same as previous answer...
-
-def add_book():
-    st.header("Add a Book")
-    with st.form("add_book_form"):
-        title = st.text_input("Title")
-        author = st.text_input("Author")
-        year = st.text_input("Publication Year")
-        genre = st.text_input("Genre")
-        read_status = st.checkbox("Read Status")
-        submitted = st.form_submit_button("Add Book")
-        
-        if submitted:
-            if title and author:  # Basic validation
-                book = {
-                    "title": title,
-                    "author": author,
-                    "year": year,
-                    "genre": genre,
-                    "read": read_status
-                }
-                db.collection("books").add(book)
-                st.success("Book added successfully!")
-            else:
-                st.warning("Title and Author are required fields")
-
-def remove_book():
-    st.header("Remove a Book")
-    title = st.text_input("Enter title to remove")
-    if st.button("Remove Book"):
-        if title:
-            books_ref = db.collection("books")
-            docs = books_ref.where("title", "==", title).stream()
-            
-            found = False
-            for doc in docs:
-                doc.reference.delete()
-                found = True
-            
-            if found:
-                st.success("Book removed successfully!")
-            else:
-                st.error("Book not found")
-        else:
-            st.warning("Please enter a title")
-
-def search_book():
-    st.header("Search Books")
-    search_type = st.radio("Search by", ["Title", "Author"])
-    keyword = st.text_input("Enter search keyword").lower()
-    
-    if st.button("Search"):
-        if keyword:
-            books_ref = db.collection("books")
-            if search_type == "Title":
-                docs = books_ref.where("title", ">=", keyword).stream()
-            else:
-                docs = books_ref.where("author", ">=", keyword).stream()
-            
-            books = []
-            for doc in docs:
-                book = doc.to_dict()
-                book["status"] = 'Read' if book['read'] else 'Unread'
-                books.append(book)
-            
-            if books:
-                st.dataframe(books)
-            else:
-                st.info("No matching books found")
-        else:
-            st.warning("Please enter a search keyword")
-
-def display_all_books():
-    st.header("All Books")
-    docs = db.collection("books").stream()
-    
-    books = []
+# Function to remove a book
+def remove_book(title):
+    books_ref = db.collection("books")
+    docs = books_ref.where("title", "==", title).stream()
     for doc in docs:
-        book = doc.to_dict()
-        book["status"] = 'Read' if book['read'] else 'Unread'
-        books.append(book)
-    
-    if books:
-        st.dataframe(books)
-    else:
-        st.info("No books in the library")
+        doc.reference.delete()
 
-def display_statistics():
-    st.header("Library Statistics")
+# Function to search for books
+def search_books(field, keyword):
+    books_ref = db.collection("books")
+    docs = books_ref.where(field, ">=", keyword).stream()
+    return [doc.to_dict() for doc in docs]
+
+# Function to display all books
+def get_all_books():
     docs = db.collection("books").stream()
-    
+    return [doc.to_dict() for doc in docs]
+
+# Function to display statistics
+def get_statistics():
+    docs = db.collection("books").stream()
     total_books = 0
     read_books = 0
-    
     for doc in docs:
         book = doc.to_dict()
         total_books += 1
         if book['read']:
             read_books += 1
-    
-    if total_books == 0:
-        st.info("No books in the library")
-        return
-    
-    percentage_read = (read_books / total_books) * 100
-    st.metric("Total Books", total_books)
-    st.metric("Percentage Read", f"{percentage_read:.1f}%")
+    percentage_read = (read_books / total_books) * 100 if total_books > 0 else 0
+    return total_books, round(percentage_read, 1)
 
-def main():
-    st.title("📚 Book Library Manager")
-    
-    # Sidebar navigation
-    menu_options = {
-        "Add a book": add_book,
-        "Remove a book": remove_book,
-        "Search for a book": search_book,
-        "Display all books": display_all_books,
-        "Display statistics": display_statistics
-    }
-    
-    selected = st.sidebar.selectbox("Menu", list(menu_options.keys()))
-    
-    # Display selected page
-    menu_options[selected]()
+# Streamlit UI
+st.title("📚 Firestore Book Manager")
 
-if __name__ == "__main__":
-    main()
+menu = st.sidebar.selectbox("Menu", ["Add Book", "Remove Book", "Search Book", "Display All Books", "Statistics"])
+
+if menu == "Add Book":
+    with st.form("add_book_form"):
+        title = st.text_input("Book Title")
+        author = st.text_input("Author")
+        year = st.text_input("Publication Year")
+        genre = st.text_input("Genre")
+        read_status = st.checkbox("Read")
+        submit = st.form_submit_button("Add Book")
+        if submit:
+            add_book(title, author, year, genre, read_status)
+            st.success("Book added successfully!")
+
+elif menu == "Remove Book":
+    book_title = st.text_input("Enter the title of the book to remove")
+    if st.button("Remove Book"):
+        remove_book(book_title)
+        st.success("Book removed successfully!")
+
+elif menu == "Search Book":
+    search_option = st.radio("Search by", ["Title", "Author"])
+    keyword = st.text_input("Enter keyword")
+    if st.button("Search"):
+        field = "title" if search_option == "Title" else "author"
+        books = search_books(field, keyword)
+        if books:
+            for book in books:
+                st.write(book)
+        else:
+            st.warning("No matching book found.")
+
+elif menu == "Display All Books":
+    books = get_all_books()
+    if books:
+        for book in books:
+            st.write(book)
+    else:
+        st.warning("No books in the library.")
+
+elif menu == "Statistics":
+    total_books, percentage_read = get_statistics()
+    st.write(f"Total Books: {total_books}")
+    st.write(f"Percentage Read: {percentage_read}%")
