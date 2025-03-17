@@ -1,17 +1,21 @@
-import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 
 # Initialize Firebase Admin SDK
 cred = credentials.Certificate("firebase-keys.json")
-if not firebase_admin._apps:
-    firebase_admin.initialize_app(cred)
+firebase_admin.initialize_app(cred)
 
 # Firestore reference
 db = firestore.client()
 
-# Function to add a book
-def add_book(title, author, year, genre, read_status):
+
+def add_book():
+    title = input("Enter the book title: ")
+    author = input("Enter the author: ")
+    year = input("Enter the publication year: ")
+    genre = input("Enter the genre: ")
+    read_status = input("Have you read this book? (yes/no): ").strip().lower() == 'yes'
+
     book = {
         "title": title,
         "author": author,
@@ -19,83 +23,115 @@ def add_book(title, author, year, genre, read_status):
         "genre": genre,
         "read": read_status
     }
-    db.collection("books").add(book)
 
-# Function to remove a book
-def remove_book(title):
+    db.collection("books").add(book)
+    print("Book added successfully!")
+
+
+def remove_book():
+    title = input("Enter the title of the book to remove: ")
     books_ref = db.collection("books")
     docs = books_ref.where("title", "==", title).stream()
+
+    found = False
     for doc in docs:
         doc.reference.delete()
+        found = True
 
-# Function to search for books
-def search_books(field, keyword):
+    if found:
+        print("Book removed successfully!")
+    else:
+        print("Book not found.")
+
+
+def search_book():
+    print("Search by:\n1. Title\n2. Author")
+    choice = input("Enter your choice: ")
+    keyword = input("Enter the keyword: ").lower()
+
     books_ref = db.collection("books")
-    docs = books_ref.where(field, ">=", keyword).stream()
-    return [doc.to_dict() for doc in docs]
+    if choice == '1':
+        docs = books_ref.where("title", ">=", keyword).stream()
+    elif choice == '2':
+        docs = books_ref.where("author", ">=", keyword).stream()
+    else:
+        print("Invalid choice.")
+        return
 
-# Function to display all books
-def get_all_books():
-    docs = db.collection("books").stream()
-    return [doc.to_dict() for doc in docs]
+    found = False
+    for doc in docs:
+        book = doc.to_dict()
+        status = 'Read' if book['read'] else 'Unread'
+        print(book['title'], "by", book['author'], "(", book['year'], ") -", book['genre'], "-", status)
+        found = True
 
-# Function to display statistics
-def get_statistics():
+    if not found:
+        print("No matching book found.")
+
+
+def display_all_books():
     docs = db.collection("books").stream()
+
+    found = False
+    for doc in docs:
+        book = doc.to_dict()
+        status = 'Read' if book['read'] else 'Unread'
+        print(book['title'], "by", book['author'], "(", book['year'], ") -", book['genre'], "-", status)
+        found = True
+
+    if not found:
+        print("No books in the library.")
+
+
+
+def display_statistics():
+    docs = db.collection("books").stream()
+
     total_books = 0
     read_books = 0
+
     for doc in docs:
         book = doc.to_dict()
         total_books += 1
         if book['read']:
             read_books += 1
-    percentage_read = (read_books / total_books) * 100 if total_books > 0 else 0
-    return total_books, round(percentage_read, 1)
 
-# Streamlit UI
-st.title("📚 Firestore Book Manager")
+    if total_books == 0:
+        print("No books in the library.")
+        return
 
-menu = st.sidebar.selectbox("Menu", ["Add Book", "Remove Book", "Search Book", "Display All Books", "Statistics"])
+    percentage_read = (read_books / total_books) * 100
+    print("Total books:", total_books)
+    print("Percentage read:", round(percentage_read, 1), "%")
 
-if menu == "Add Book":
-    with st.form("add_book_form"):
-        title = st.text_input("Book Title")
-        author = st.text_input("Author")
-        year = st.text_input("Publication Year")
-        genre = st.text_input("Genre")
-        read_status = st.checkbox("Read")
-        submit = st.form_submit_button("Add Book")
-        if submit:
-            add_book(title, author, year, genre, read_status)
-            st.success("Book added successfully!")
 
-elif menu == "Remove Book":
-    book_title = st.text_input("Enter the title of the book to remove")
-    if st.button("Remove Book"):
-        remove_book(book_title)
-        st.success("Book removed successfully!")
+def menu():
+    while True:
+        print("\nMenu")
+        print("1. Add a book")
+        print("2. Remove a book")
+        print("3. Search for a book")
+        print("4. Display all books")
+        print("5. Display statistics")
+        print("6. Exit")
 
-elif menu == "Search Book":
-    search_option = st.radio("Search by", ["Title", "Author"])
-    keyword = st.text_input("Enter keyword")
-    if st.button("Search"):
-        field = "title" if search_option == "Title" else "author"
-        books = search_books(field, keyword)
-        if books:
-            for book in books:
-                st.write(book)
+        choice = input("Enter your choice: ")
+
+        if choice == '1':
+            add_book()
+        elif choice == '2':
+            remove_book()
+        elif choice == '3':
+            search_book()
+        elif choice == '4':
+            display_all_books()
+        elif choice == '5':
+            display_statistics()
+        elif choice == '6':
+            print("Goodbye!")
+            break
         else:
-            st.warning("No matching book found.")
+            print("Invalid choice. Please try again.")
 
-elif menu == "Display All Books":
-    books = get_all_books()
-    if books:
-        for book in books:
-            st.write(book)
-    else:
-        st.warning("No books in the library.")
 
-elif menu == "Statistics":
-    total_books, percentage_read = get_statistics()
-    st.write(f"Total Books: {total_books}")
-    st.write(f"Percentage Read: {percentage_read}%")
+menu()
